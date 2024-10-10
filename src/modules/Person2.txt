@@ -1,0 +1,401 @@
+import random
+import sys
+import numpy as np
+from modules.death_function import getDeathAge
+from modules.birth_function import getChildbearing_Years_and_Periods
+from config import year_0,year_end
+
+np.random.seed(42)
+
+# def vac_wane_linear(days_waned):
+
+#     protection_level = -(VAC_HIGH - VAC_LOW) * days_waned / VAC_PERIOD + VAC_HIGH
+#     return  protection_level
+
+# death rate  2015 - 2019, except the covid effect 
+
+class Person:
+
+    # by default -1 
+    efficacy = -1
+    coverage = -1
+
+    def __init__(self, index, age,yearOfadd, gender):
+        
+        # demographic information 
+        self.index = index
+        self.yearOfadd = yearOfadd
+        self.age = age
+        self.AgeOfAdd = age  # will not change in the future 
+        self.gender = gender
+        self.deathAge = getDeathAge(yearOfadd,age) # refer to the age of add 
+        
+        # infection parameters 
+        self.health_state = 1
+        self.days = 0
+        self.expected_exposed_time = -1
+        self.expected_infected_time = -1
+        self.expected_immune_time = -1
+        self.exposed_date = []
+        self.infection_period = []
+        
+        # vaccination parameter 
+        self.update_vac = False
+        #self.ini_days_waned = 0
+        self.is_vaccinated = False
+        self.protection_level = 0
+        
+        # day 0 refers to the first day of infection 
+        self.vac_periods =  []
+        # vaccination: 
+    # def get_protect_lvl(self):
+        
+    #     # assume vaccine is effective for 5 years, and the initial protection level is 0.8
+    #     # exposed_date is in old formate 2024.1.1 is day 365
+    #     # t is the time counted from the infection 
+        
+    #     #days_waned = (days_waned) % VAC_PERIOD
+    #     self.protection_level = #vac_wane_linear(days_waned)
+    # def initialize_days_waned(self):
+    #     self.ini_days_waned = 0
+    #     #self.ini_days_waned = random.randint(0,VAC_PERIOD)
+    # (A,T,F)
+    # if above A , all done at the start of 2024 
+    # A ~ A + T * F -1 
+    
+    @classmethod
+    def get_vac_coverage(cls):
+        return cls.coverage
+    
+    @classmethod
+    def get_vac_efficacy(cls):
+        if (cls.efficacy == -1):
+            raise ValueError
+        return cls.efficacy
+    
+    def update_vaccination_status(self, vac_tuple ):
+        '''
+        in the first year, age of A - B, x% coverage
+        after the outbreak, every year , vaccinate people who reaches A year old 
+        we only vaccinate one program once, i.e. for those who are not vaccinated, 
+        
+
+        AgeOfAdd: the age of the person when he/she is added to the population
+
+        update_vac:  if the person has been checked  vaccination before 
+        is_vaccinated: check if the person is vaccinated 
+
+        protection_level: protection level after waning 
+        '''
+        
+        start_age, vac_time, vac_freq = vac_tuple
+        
+        end_age = start_age + vac_time * vac_freq -1
+        
+        VAC_COVERAGE = self.get_vac_coverage()
+        VAC_EFFICACY = self.get_vac_efficacy()
+        
+        if(VAC_COVERAGE <0):
+            raise ValueError
+            # make it proper 
+        
+        if self.gender == 2 and not(self.update_vac):
+
+                # if age of add is within A- B, then  80% prob of getting vaccinated or 
+                # later she reaches A - B, then she goes into vac group 
+                # update_vac track if the person is vaccinated                
+
+                r1 = np.random.rand()
+                if  start_age <= self.AgeOfAdd <= end_age:
+                    self.update_vac = True   
+                    if r1 <= VAC_COVERAGE:
+                            self.is_vaccinated = True
+                            self.protection_level = VAC_EFFICACY 
+                            vac_total_freq =  vac_freq - (self.AgeOfAdd  - start_age) // vac_time
+                            vac_total_time =  vac_total_freq * vac_time
+                            self.vac_periods.append( (0,vac_total_freq * vac_time * 365) ) 
+                
+                elif self.AgeOfAdd  <= start_age and self.age >= start_age :
+                    
+                    self.update_vac = True
+                    
+                    if r1 <= VAC_COVERAGE:
+                            self.is_vaccinated = True
+                            self.protection_level = VAC_EFFICACY 
+                            vac_total_freq =  vac_freq 
+                            vac_total_time =  vac_total_freq * vac_time
+                            start_year =   start_age - self.AgeOfAdd # + self.yearOfadd - 2024, as yearOfadd is always 2024
+                            self.vac_periods.append((start_year * 365,(vac_total_freq * vac_time + start_year) * 365))  
+                            
+
+    def infection_direct(self,date):
+        '''
+        forced infection, ignore the vac effect (almost no effect on final result)
+        used for initial infection
+        '''
+        self.health_state = 3
+        self.days = 0
+        self.exposed_date.append(date) # assume exposed-date is the infection date 
+        self.expected_infected_time = np.random.normal(5.5,0.77) 
+
+        #self.expected_immune_time = np.random.negative_binomial(1, 1/365/2, size=1)[0] # 365*2 #random.randint(50,365*2 -50)
+        tuple = (
+                date,
+                date + self.expected_infected_time -1
+            )
+
+        self.infection_period.append(tuple)
+        
+    
+    def IfDateWithinPeriod(self,date):
+        
+        Flag = False
+
+        for vac_period in self.vac_periods:
+            if date >= vac_period[0] and \
+                date < vac_period[1]:
+                    
+                Flag = True
+            else:
+                continue
+            
+        return Flag
+        # try:
+        #     a = self.vac_periods
+        # except AttributeError as e:
+        #     # Handle the AttributeError and print the error message
+        #     print(f"AttributeError: {e}")
+        #     # Exit the program
+        #     print(f"\n all attribute {self.__dict__}")
+            
+        #     sys.exit(1)
+    def contact_with_infected(self, date):
+        
+        r2 = np.random.rand()
+        
+        if not ( self.IfDateWithinPeriod(date) and r2 <= self.protection_level ):
+            # take effect  condition means if infection within the vaccination period 
+            # resist: the one is vaccinated , date within vaccination, and within the protection level
+                self.health_state = 2
+                self.exposed_date.append(date)
+                # python is always [,), days from day 0 
+                self.expected_exposed_time = np.random.gamma(16.9625,1/2.875) 
+                self.expected_infected_time = np.random.normal(5.5,0.77) 
+                # self.expected_immune_time = np.random.negative_binomial(1, 1/365/2, size=1)[0] # 365*2 #random.randint(50,365*2 -50)
+            
+                # special closed interval []
+                tuple = (
+                    date,
+                    date + self.expected_exposed_time + self.expected_infected_time -1 
+                )
+                self.infection_period.append(tuple)
+    
+
+    def make_infection(self):
+        self.health_state = 3
+        self.days = 0
+
+    def make_recovery(self):
+        self.health_state = 4
+        self.days = 0 # two year 
+        
+    def back_to_S(self):
+        # since w assume robost immunity,this function is not usable
+        self.health_state = 1
+        self.days = 0
+        self.expected_exposed_time = -1
+        self.expected_infected_time  = -1 
+       
+
+    def update_by_day(self):
+        self.days += 1
+
+    def update_age(self):
+        self.age += 1   
+
+    
+    
+
+
+class Female(Person):
+    
+    def __init__(self, index, age, yearOfadd, gender=2):
+        super().__init__(index, age,yearOfadd, gender)
+
+        # simulate the pregnancy only from year_0 to year_end and 15 - 49 years old 
+        pregnancy_start = max(year_0, self.yearOfadd - self.AgeOfAdd + 15)
+        pregnancy_end = min(year_end, self.yearOfadd  - self.AgeOfAdd + 49)
+        
+      
+        age_of_start = pregnancy_start - self.yearOfadd + self.AgeOfAdd
+
+
+        self.pregnancy_years , self.pregnancy_periods = getChildbearing_Years_and_Periods(pregnancy_start,
+                          pregnancy_end,
+                          age_of_start
+                         ) # in case for further immigrations 
+
+
+    def update_vaccination_preg(self):
+        '''
+        for females, everyone has pregnancy periods 
+        the conception, 1 year before the conception
+        
+        return a [] 
+        '''
+        
+        
+        if not(self.update_vac) and (self.pregnancy_periods != []):
+            
+            # 52% is planned pregnancy 
+            # we assume that for planned pregnancy, females do protection one yearin advance 
+            
+            # however, the start of getting vaccinated should after date 0 (year 2024, date 0 )
+            
+            # every time is independent 
+            # 
+            # cover all the pregnancies 
+
+                for preg_period in self.pregnancy_periods:
+                    
+                    r2 = np.random.rand()
+                    # planned porportion 0.52
+                    if r2 <= .52:
+                        
+                        self.is_vaccinated = True 
+                        self.protection_level = self.get_vac_efficacy()
+                        self.update_vac = True 
+                    
+                        conception_date = preg_period[0]
+                        
+                        vac_start = max(0,conception_date - 365 )
+                        vac_end = vac_start + 365 *2
+                        
+                        self.vac_periods.append(  (vac_start,vac_end) )
+
+# 15 - 49, but 2024 to 2050 
+
+class Male(Person):
+    def __init__(self, index, age,yearOfadd, gender=1):
+        super().__init__(index, age,yearOfadd, gender)
+
+
+    
+
+
+def main():
+
+    female_instance = Female(index=1, age=25, yearOfadd=2023)
+    print(f"Female: {female_instance.__dict__}\n")
+    
+    
+
+    female_instance.infection_direct(20)
+    print(f"Female: {female_instance.__dict__}\n")
+    
+    vac_tuple = vac_dic[1]
+    
+    print( vac_tuple, "\n")
+    
+    female_instance.update_vaccination_status(vac_tuple)
+    print(f"Female: {female_instance.__dict__}\n")
+    
+    
+
+    
+
+
+
+# from config import vac_dic
+
+import unittest
+from unittest.mock import patch
+import numpy as np
+
+# Assuming your Population and Female classes are defined
+
+class TestUpdateVaccinationStatus(unittest.TestCase):
+    
+    Person.efficacy =  .8
+    Person.coverage = .8 
+
+    @patch("numpy.random.rand", return_value=0.5)  # Mock the random number generator
+    def test_within_target_group_vaccinated(self, mock_rand):
+        vac_tuple = vac_dic[4]
+        female_instance = Female(index=1, age=25, yearOfadd=2023)
+        female_instance.update_vaccination_status(vac_tuple= vac_tuple )
+        self.assertTrue(female_instance.is_vaccinated)
+        # self.assertEqual(female_instance.protection_level, VAC_HIGH)
+        self.assertEqual(female_instance.vac_periods, [(0,20 * 365)])
+
+    @patch("numpy.random.rand", return_value=0.2)  # Mock the random number generator
+    def test_within_target_group_vaccinated(self, mock_rand):
+        vac_tuple = vac_dic[4]
+        female_instance = Female(index=1, age=15, yearOfadd=2024)
+        
+        # self.assertEqual(female_instance.protection_level, 0)  # Assuming VAC_HIGH is defined somewhere
+        female_instance.age = 20
+        female_instance.update_vaccination_status(vac_tuple= vac_tuple)
+        print(f"Female: {female_instance.__dict__}\n")
+        self.assertTrue(female_instance.is_vaccinated)
+        self.assertEqual(female_instance.vac_periods, [(3 * 365 , 28 * 365)])  # Assuming VAC_HIGH is defined somewhere
+        
+    # Add similar test cases for other scenarios...
+    @patch("numpy.random.rand", return_value=0.2) 
+    
+    def test_within_target_group_type8(self, mock_rand):
+        vac_tuple = vac_dic[4]
+        female_instance = Female(index=1, age=15, yearOfadd=2024)
+        female_instance.pregnancy_years = [2025,2028]
+        female_instance.pregnancy_periods = [(445, 724), (1182, 1461)]
+        # self.assertEqual(female_instance.protection_level, 0)  # Assuming VAC_HIGH is defined somewhere
+        female_instance.age = 20
+        female_instance.update_vaccination_preg()
+        print(f"type8, Female: {female_instance.__dict__}\n")
+        self.assertTrue(female_instance.is_vaccinated)
+        self.assertEqual(female_instance.vac_periods, [(445 - 365 , 445 + 365),(1182- 365, 1182 + 365) ])  # Assuming VAC_HIGH is defined somewhere
+        
+        # test contact function
+        
+        female_instance.contact_with_infected(85)
+        self.assertEqual(female_instance.infection_period, [])  # Assuming VAC_HIGH is defined somewhere
+        female_instance.contact_with_infected(40)
+        
+        print(f"after contact with infected: {female_instance.__dict__}\n")
+        
+    @patch("numpy.random.rand", return_value=0.9)  # Mock the random number generator
+    def test_within_target_group_vaccinated(self, mock_rand):
+        vac_tuple = vac_dic[4]
+        female_instance = Female(index=1, age=15, yearOfadd=2024)
+        
+        # self.assertEqual(female_instance.protection_level, 0)  # Assuming VAC_HIGH is defined somewhere
+        female_instance.age = 20
+        female_instance.update_vaccination_status(vac_tuple= vac_tuple)
+        print(f"Female: {female_instance.__dict__}\n")
+        self.assertFalse(female_instance.is_vaccinated)
+        #self.assertEqual(female_instance.vac_periods, [(3 * 365 , 28 * 365)])  # Assuming VAC_HIGH is defined somewhere
+     
+    
+    
+ 
+
+if __name__ == "__main__":
+    #main()
+    unittest.main()
+    pass
+    
+    
+
+    
+    
+    
+ 
+ 
+# python with_vaccine/Person.py
+
+# if we defined vac_tuple outside, could we access it 
+
+
+# target:
+# ask pregnant women to get ... 
+# 

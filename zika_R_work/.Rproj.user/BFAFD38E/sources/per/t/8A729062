@@ -1,0 +1,26 @@
+{
+    "id": "8A729062",
+    "path": "~/Documents/GitHub/zika_project-reformatted-/zika_R_work/code/dengue.R",
+    "project_path": "code/dengue.R",
+    "type": "r_source",
+    "hash": "744087772",
+    "contents": "",
+    "dirty": false,
+    "created": 1726120550016.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "25,0",
+        "scrollLine": "14"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1718152305,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1718152305,
+    "read_only": false,
+    "read_only_alternatives": []
+}
